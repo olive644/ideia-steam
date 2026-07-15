@@ -15,7 +15,15 @@ export const Route = createFileRoute("/_authenticated/configuracoes")({
 
 const profileSchema = z.object({
   nome: z.string().trim().min(2, "Nome muito curto").max(60),
-  foto: z.string().trim().url("URL de foto inválida").max(500).or(z.literal("")),
+  foto: z
+    .string()
+    .trim()
+    .url("URL de foto inválida")
+    .max(500)
+    .refine((value) => !value || value.startsWith("https://"), {
+      message: "A URL da foto precisa usar HTTPS.",
+    })
+    .or(z.literal("")),
   bio: z.string().trim().max(500, "Bio muito longa").or(z.literal("")),
 });
 
