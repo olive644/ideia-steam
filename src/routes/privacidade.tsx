@@ -34,8 +34,7 @@ function Privacidade() {
             <h2 className="text-lg font-semibold text-foreground">2. Uso dos dados</h2>
             <p className="mt-2">
               Utilizamos seus dados para autenticar seu acesso, exibir seu perfil público, enviar
-              emails transacionais (confirmação de cadastro, redefinição de senha) e melhorar o
-              serviço.
+              emails transacionais (como redefinição de senha) e melhorar o serviço.
             </p>
           </section>
 

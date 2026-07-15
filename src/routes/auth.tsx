@@ -39,11 +39,6 @@ function AuthPage() {
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) navigate({ to: "/perfil", replace: true });
     });
-
-    const params = new URLSearchParams(window.location.search);
-    if (params.get("confirmed") === "1") {
-      setMessage("Seu email foi confirmado. Faça login para continuar.");
-    }
   }, [navigate]);
 
   // Só libera o botão de Entrar/Criar conta quando os campos obrigatórios
@@ -108,7 +103,6 @@ function AuthPage() {
           email: parsed.data.email,
           password: parsed.data.senha,
           options: {
-            // do not require email redirect/confirmation from client side
             data: { nome: parsed.data.nome, terms_accepted_at: new Date().toISOString() },
           },
         });
@@ -152,11 +146,7 @@ function AuthPage() {
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : "Erro ao autenticar";
-      if (message.toLowerCase().includes("confirm")) {
-        toast.error("Email não confirmado. Verifique sua caixa de entrada ou spam.");
-      } else {
-        toast.error(message);
-      }
+      toast.error(message);
     } finally {
       setLoading(false);
     }

@@ -41,10 +41,9 @@ function Termos() {
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-foreground">3. Verificação por email</h2>
+            <h2 className="text-lg font-semibold text-foreground">3. Cadastro livre</h2>
             <p className="mt-2">
-              Após o cadastro, enviamos um email de confirmação. O acesso completo à conta só é
-              liberado após a verificação do endereço fornecido.
+              Depois do cadastro, você já pode usar o Meu Ludi normalmente.
             </p>
           </section>
 
