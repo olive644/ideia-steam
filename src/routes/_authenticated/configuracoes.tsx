@@ -372,7 +372,9 @@ function ThemeSection() {
     <section className="mt-8 space-y-5 rounded-xl border border-border bg-card p-6">
       <div>
         <h2 className="text-lg font-semibold">Aparência</h2>
-        <p className="text-xs text-muted-foreground">Personalize o tema e a cor de destaque.</p>
+        <p className="text-xs text-muted-foreground">
+          Personalize o tema e a cor de destaque do seu perfil.
+        </p>
       </div>
 
       <div>
@@ -393,7 +395,11 @@ function ThemeSection() {
 
       <div>
         <Label>Cor de destaque</Label>
-        <div className="mt-2 flex flex-wrap gap-2">
+        <p className="mb-2 mt-0.5 text-[11px] text-muted-foreground">
+          O padrão do site é Preto &amp; Branco — escolha outra cor se quiser personalizar
+          só o seu perfil.
+        </p>
+        <div className="flex flex-wrap gap-2">
           {ACCENT_OPTIONS.map((opt) => {
             const selected = accent === opt.value;
             return (

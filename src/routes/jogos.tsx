@@ -1,11 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { NavBar } from "@/components/nav-bar";
 import { GameCard, GameCardSkeleton, type GameCardData } from "@/components/game-card";
-import { Search } from "lucide-react";
+import { Search, Loader2, Plus } from "lucide-react";
+import { toast } from "sonner";
 import { z } from "zod";
+import { searchIgdb, importIgdbGame, type IgdbResult } from "@/lib/game-import";
 
 const searchSchema = z.object({
   q: z.string().optional().catch(""),
@@ -33,6 +35,7 @@ const PAGE_SIZE = 24;
 function Explorar() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: "/jogos" });
+  const queryClient = useQueryClient();
 
   const [q, setQ] = useState(search.q ?? "");
   const genero = search.genero ?? "";
@@ -72,6 +75,46 @@ function Explorar() {
     navigate({ search: (prev: Record<string, unknown>) => ({ ...prev, ...next, page: 1 }) });
   }
 
+  // Catálogo global (IGDB) — usado quando o jogo procurado ainda não existe
+  // na nossa base local. A função de busca já existia em src/lib/game-import.ts
+  // mas nunca tinha sido conectada a nenhuma tela; era por isso que buscar
+  // vários jogos diferentes "não funcionava": não tinha como chegar até ela.
+  const [igdbStatus, setIgdbStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
+  const [igdbResults, setIgdbResults] = useState<IgdbResult[]>([]);
+  const [igdbError, setIgdbError] = useState<string | null>(null);
+  const [importingId, setImportingId] = useState<number | null>(null);
+
+  async function handleBuscarCatalogoGlobal() {
+    const termo = q.trim();
+    if (!termo) return;
+    setIgdbStatus("loading");
+    setIgdbError(null);
+    try {
+      const results = await searchIgdb(termo);
+      setIgdbResults(results);
+      setIgdbStatus("done");
+    } catch (err) {
+      setIgdbError(
+        err instanceof Error ? err.message : "Não foi possível buscar no catálogo global.",
+      );
+      setIgdbStatus("error");
+    }
+  }
+
+  async function handleImportarJogo(igdbId: number) {
+    setImportingId(igdbId);
+    try {
+      await importIgdbGame(igdbId);
+      toast.success("Jogo adicionado! Já aparece na busca.");
+      setIgdbResults((prev) => prev.filter((r) => r.igdb_id !== igdbId));
+      await queryClient.invalidateQueries({ queryKey: ["jogos"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Falha ao importar esse jogo.");
+    } finally {
+      setImportingId(null);
+    }
+  }
+
   const totalPages = data ? Math.max(1, Math.ceil(data.count / PAGE_SIZE)) : 1;
   const GENEROS = [
     "RPG",
@@ -106,6 +149,8 @@ function Explorar() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
+            setIgdbStatus("idle");
+            setIgdbResults([]);
             applyFilters({ q });
           }}
           className="mb-4 flex gap-2"
@@ -155,7 +200,15 @@ function Explorar() {
             ))}
           </div>
         ) : !data?.rows.length ? (
-          <EmptyState />
+          <EmptyState
+            q={q}
+            status={igdbStatus}
+            error={igdbError}
+            results={igdbResults}
+            importingId={importingId}
+            onBuscarCatalogo={handleBuscarCatalogoGlobal}
+            onImportar={handleImportarJogo}
+          />
         ) : (
           <>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
@@ -188,6 +241,18 @@ function Explorar() {
                   Próxima
                 </button>
               </div>
+            )}
+
+            {q && (
+              <CatalogoGlobalSection
+                q={q}
+                status={igdbStatus}
+                error={igdbError}
+                results={igdbResults}
+                importingId={importingId}
+                onBuscarCatalogo={handleBuscarCatalogoGlobal}
+                onImportar={handleImportarJogo}
+              />
             )}
           </>
         )}
@@ -227,10 +292,123 @@ function Select({
   );
 }
 
-function EmptyState() {
+type IgdbStatus = "idle" | "loading" | "done" | "error";
+
+function EmptyState({
+  q,
+  status,
+  error,
+  results,
+  importingId,
+  onBuscarCatalogo,
+  onImportar,
+}: {
+  q: string;
+  status: IgdbStatus;
+  error: string | null;
+  results: IgdbResult[];
+  importingId: number | null;
+  onBuscarCatalogo: () => void;
+  onImportar: (igdbId: number) => void;
+}) {
   return (
-    <div className="flex flex-col items-center rounded-lg border border-dashed border-border bg-card/40 py-16 text-center">
+    <div className="rounded-lg border border-dashed border-border bg-card/40 py-16 text-center">
       <p className="text-sm text-muted-foreground">Nenhum jogo encontrado com esses filtros.</p>
+      {q && (
+        <div className="mx-auto mt-6 max-w-md px-4 text-left">
+          <CatalogoGlobalSection
+            q={q}
+            status={status}
+            error={error}
+            results={results}
+            importingId={importingId}
+            onBuscarCatalogo={onBuscarCatalogo}
+            onImportar={onImportar}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CatalogoGlobalSection({
+  q,
+  status,
+  error,
+  results,
+  importingId,
+  onBuscarCatalogo,
+  onImportar,
+}: {
+  q: string;
+  status: IgdbStatus;
+  error: string | null;
+  results: IgdbResult[];
+  importingId: number | null;
+  onBuscarCatalogo: () => void;
+  onImportar: (igdbId: number) => void;
+}) {
+  return (
+    <div className="mt-8 border-t border-border pt-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-sm font-semibold">Não achou "{q}"?</h2>
+          <p className="text-xs text-muted-foreground">
+            Busque no catálogo global e adicione o jogo à plataforma.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onBuscarCatalogo}
+          disabled={status === "loading"}
+          className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
+        >
+          {status === "loading" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+          Buscar no catálogo global
+        </button>
+      </div>
+
+      {status === "error" && (
+        <p className="mt-4 text-xs text-destructive">{error}</p>
+      )}
+
+      {status === "done" && results.length === 0 && (
+        <p className="mt-4 text-xs text-muted-foreground">
+          Nenhum resultado encontrado no catálogo global para "{q}".
+        </p>
+      )}
+
+      {results.length > 0 && (
+        <ul className="mt-4 divide-y divide-border">
+          {results.map((r) => (
+            <li key={r.igdb_id} className="flex items-center gap-3 py-3">
+              <div className="h-16 w-11 shrink-0 overflow-hidden rounded bg-muted">
+                {r.capa && <img src={r.capa} alt="" className="h-full w-full object-cover" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{r.titulo}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {r.desenvolvedora ?? "—"}
+                  {r.data_lancamento ? ` · ${r.data_lancamento.slice(0, 4)}` : ""}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => onImportar(r.igdb_id)}
+                disabled={importingId === r.igdb_id}
+                className="flex shrink-0 items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-semibold hover:opacity-90 disabled:opacity-60"
+              >
+                {importingId === r.igdb_id ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Plus className="h-3.5 w-3.5" />
+                )}
+                Adicionar
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

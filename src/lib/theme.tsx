@@ -44,19 +44,19 @@ function applyTheme(mode: ThemeMode, accent: AccentColor) {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>("dark");
-  const [accent, setAccentState] = useState<AccentColor>("green");
+  const [accent, setAccentState] = useState<AccentColor>("neutral");
   const [hydrated, setHydrated] = useState(false);
 
   // Load from localStorage first, then from profile if logged in
   useEffect(() => {
     try {
       const m = (localStorage.getItem("ludi:mode") as ThemeMode) || "dark";
-      const a = (localStorage.getItem("ludi:accent") as AccentColor) || "green";
+      const a = (localStorage.getItem("ludi:accent") as AccentColor) || "neutral";
       setModeState(m);
       setAccentState(a);
       applyTheme(m, a);
     } catch {
-      applyTheme("dark", "green");
+      applyTheme("dark", "neutral");
     }
     setHydrated(true);
 

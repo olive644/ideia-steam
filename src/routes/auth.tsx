@@ -40,6 +40,16 @@ function AuthPage() {
     });
   }, [navigate]);
 
+  // Só libera o botão de Entrar/Criar conta quando os campos obrigatórios
+  // dessa etapa estiverem preenchidos corretamente (reaproveita os mesmos
+  // schemas usados na validação do submit, então os dois ficam sempre
+  // consistentes entre si).
+  const formValido =
+    mode === "signup"
+      ? signUpSchema.safeParse({ nome, email, senha }).success
+      : signInSchema.safeParse({ email, senha }).success;
+  const podeEnviar = formValido && aceito;
+
   function ensureTerms(): boolean {
     if (!aceito) {
       toast.error("Você precisa aceitar os Termos e a Política de Privacidade.");
@@ -206,29 +216,44 @@ function AuthPage() {
               </button>
             )}
 
-            <label className="flex items-start gap-2 text-xs text-muted-foreground">
+            {/* O checkbox e o texto ficam como irmãos (associados por
+                id/htmlFor), não um dentro do outro. Colocar os links de
+                Termos/Privacidade dentro de um <label> que também engloba o
+                <input> é inválido em HTML e fazia o clique nos links às
+                vezes marcar/desmarcar o checkbox junto (o "bug" ao aceitar
+                as políticas). */}
+            <div className="flex items-start gap-2 text-xs text-muted-foreground">
               <input
+                id="aceite-termos"
                 type="checkbox"
                 checked={aceito}
                 onChange={(e) => setAceito(e.target.checked)}
                 className="mt-0.5 h-4 w-4 shrink-0 accent-foreground"
               />
-              <span>
+              <label htmlFor="aceite-termos">
                 Li e aceito os{" "}
-                <Link to="/termos" className="text-foreground underline">
+                <Link
+                  to="/termos"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-foreground underline"
+                >
                   Termos de Uso
                 </Link>{" "}
                 e a{" "}
-                <Link to="/privacidade" className="text-foreground underline">
+                <Link
+                  to="/privacidade"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-foreground underline"
+                >
                   Política de Privacidade
                 </Link>
                 .
-              </span>
-            </label>
+              </label>
+            </div>
 
             <button
               type="submit"
-              disabled={loading || !aceito}
+              disabled={loading || !podeEnviar}
               className="flex w-full items-center justify-center gap-2 rounded-md bg-primary py-2.5 font-semibold text-primary-foreground transition hover:opacity-90 disabled:opacity-50"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}

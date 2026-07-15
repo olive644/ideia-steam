@@ -35,8 +35,8 @@
 
 /* ============ MODO ESCURO (padrão) ============
    Paleta inspirada em diários de cinema/jogos clássicos: fundo azul-carvão
-   (não preto puro), texto marfim (não branco puro) e um verde de destaque
-   — em vez do cinza monocromático genérico. */
+   (não preto puro), texto marfim (não branco puro), monocromática — preto
+   e branco, sem cor de destaque colorida. */
 :root,
 .dark {
   --radius: 0.25rem;
@@ -58,11 +58,11 @@
   --destructive-foreground: #f5f2e9;
   --border: #2b323a;
   --input: #1e2429;
-  --ring: #00c853;
+  --ring: #e7e4d9;
 
-  /* cor de destaque temática (pode ser sobrescrita pelo tema do usuário) */
-  --brand: #00c853;
-  --brand-foreground: #08130b;
+  /* cor de destaque: apenas preto & branco (sem opção colorida) */
+  --brand: #e7e4d9;
+  --brand-foreground: #14181c;
 }
 
 /* ============ MODO CLARO ============
@@ -86,13 +86,15 @@
   --destructive-foreground: #fbfaf4;
   --border: #d8d1ba;
   --input: #e9e4d4;
-  --ring: #0a7a3e;
+  --ring: #191b17;
 
-  --brand: #0a7a3e;
+  --brand: #191b17;
   --brand-foreground: #fbfaf4;
 }
 
-/* Sobrescritas por tema de cor — aplicadas via classe no <html> */
+/* Preto & branco é o padrão do site — cores abaixo só se aplicam se o
+   usuário escolher outra em Configurações > Aparência (fica salvo no perfil
+   dele, não muda o padrão de quem não escolheu nada). */
 .accent-neutral {
   --brand: var(--foreground);
   --brand-foreground: var(--background);
