@@ -82,24 +82,29 @@ function Home() {
       <NavBar />
       <main className="mx-auto max-w-6xl px-4 py-8">
         {/* Hero */}
-        <section className="rounded-2xl border border-border bg-card p-8 md:p-12">
-          <span className="inline-block rounded-full border border-border bg-background px-3 py-1 text-xs uppercase tracking-[0.2em] text-muted-foreground">
+        <section className="border-b border-border pb-10 pt-4">
+          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand">
             Diário social de jogos
-          </span>
-          <h1 className="mt-4 max-w-2xl text-4xl font-bold leading-tight md:text-5xl">
-            Acompanhe jogos que você ama.
-            <span className="block text-muted-foreground">Compartilhe com o mundo.</span>
+          </p>
+          <h1 className="mt-3 max-w-2xl text-4xl leading-[1.1] md:text-6xl">
+            Acompanhe os jogos
+            <br />
+            que você ama.
           </h1>
+          <p className="mt-4 max-w-lg text-base text-muted-foreground">
+            Registre o que jogou, dê nota, escreva resenhas e descubra o que sua
+            comunidade está jogando agora.
+          </p>
           <div className="mt-6 flex flex-wrap gap-3">
             <Link
               to="/jogos"
-              className="rounded-md bg-brand px-5 py-2.5 font-semibold hover:opacity-90"
+              className="bg-brand px-5 py-2.5 font-semibold hover:opacity-90"
             >
               Explorar jogos
             </Link>
             <Link
               to="/auth"
-              className="rounded-md border border-border px-5 py-2.5 font-medium hover:bg-accent"
+              className="border border-border px-5 py-2.5 font-medium hover:bg-accent"
             >
               Criar conta
             </Link>
