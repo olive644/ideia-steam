@@ -1,19 +1,12 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-<<<<<<< HEAD
-import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
-=======
+﻿import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo, useEffect } from "react";
->>>>>>> main
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { searchIgdb } from "@/lib/game-import";
+import { searchIgdb, type IgdbResult } from "@/lib/game-import";
 import { NavBar } from "@/components/nav-bar";
 import { GameCard, GameCardSkeleton, type GameCardData } from "@/components/game-card";
-import { Search, Loader2, Plus } from "lucide-react";
-import { toast } from "sonner";
+import { Search } from "lucide-react";
 import { z } from "zod";
-import { searchIgdb, importIgdbGame, type IgdbResult } from "@/lib/game-import";
 
 const GENEROS = [
   "RPG",
@@ -36,11 +29,14 @@ const PLATAFORMAS = [
 ] as const;
 const ANOS = Array.from({ length: 15 }, (_, i) => String(new Date().getFullYear() - i)) as const;
 
+const filterEnum = <T extends readonly [string, ...string[]]>(values: T) =>
+  z.union([z.enum(values), z.literal("")]).optional().catch("").default("");
+
 const searchSchema = z.object({
   q: z.string().trim().max(100).optional().catch("").default(""),
-  genero: z.enum(GENEROS).optional().catch("").default(""),
-  plataforma: z.enum(PLATAFORMAS).optional().catch("").default(""),
-  ano: z.enum(ANOS).optional().catch("").default(""),
+  genero: filterEnum(GENEROS),
+  plataforma: filterEnum(PLATAFORMAS),
+  ano: filterEnum(ANOS),
   page: z.coerce.number().int().min(1).optional().catch(1).default(1),
 });
 
@@ -62,9 +58,9 @@ const PAGE_SIZE = 24;
 function Explorar() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: "/jogos" });
-  const queryClient = useQueryClient();
 
   const [pendingQuery, setPendingQuery] = useState(search.q ?? "");
+  const q = search.q?.trim() ?? "";
   const genero = search.genero ?? "";
   const plataforma = search.plataforma ?? "";
   const ano = search.ano ?? "";
@@ -75,19 +71,19 @@ function Explorar() {
   }, [search.q]);
 
   const filters = useMemo(
-    () => ({ q: search.q?.trim() ?? "", genero, plataforma, ano, page }),
-    [search.q, genero, plataforma, ano, page],
+    () => ({ q, genero, plataforma, ano, page }),
+    [q, genero, plataforma, ano, page],
   );
 
   useEffect(() => {
     const timer = setTimeout(() => {
       const trimmed = pendingQuery.trim();
-      if (trimmed !== search.q) {
+      if (trimmed !== q) {
         applyFilters({ q: trimmed });
       }
     }, 450);
     return () => clearTimeout(timer);
-  }, [pendingQuery, search.q]);
+  }, [pendingQuery, q]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["jogos", filters],
@@ -113,9 +109,9 @@ function Explorar() {
   });
 
   const { data: igdbResults, isFetching: loadingIgdb } = useQuery({
-    queryKey: ["igdb-search", filters.q],
+    queryKey: ["igdb-search", q],
     queryFn: async () => {
-      const remoteResults = await searchIgdb(filters.q);
+      const remoteResults = await searchIgdb(q);
       return remoteResults.map((game) => ({
         id: `igdb-${game.igdb_id}`,
         titulo: game.titulo,
@@ -125,52 +121,12 @@ function Explorar() {
         plataformas: game.plataformas,
       })) as GameCardData[];
     },
-    enabled: Boolean(filters.q && filters.q.length >= 3 && !isLoading && data?.rows.length === 0),
+    enabled: Boolean(q && q.length >= 3 && !isLoading && data?.rows.length === 0),
     staleTime: 1000 * 60 * 2,
   });
 
   function applyFilters(next: Partial<z.infer<typeof searchSchema>>) {
     navigate({ search: (prev: Record<string, unknown>) => ({ ...prev, ...next, page: 1 }) });
-  }
-
-  // Catálogo global (IGDB) — usado quando o jogo procurado ainda não existe
-  // na nossa base local. A função de busca já existia em src/lib/game-import.ts
-  // mas nunca tinha sido conectada a nenhuma tela; era por isso que buscar
-  // vários jogos diferentes "não funcionava": não tinha como chegar até ela.
-  const [igdbStatus, setIgdbStatus] = useState<"idle" | "loading" | "done" | "error">("idle");
-  const [igdbResults, setIgdbResults] = useState<IgdbResult[]>([]);
-  const [igdbError, setIgdbError] = useState<string | null>(null);
-  const [importingId, setImportingId] = useState<number | null>(null);
-
-  async function handleBuscarCatalogoGlobal() {
-    const termo = q.trim();
-    if (!termo) return;
-    setIgdbStatus("loading");
-    setIgdbError(null);
-    try {
-      const results = await searchIgdb(termo);
-      setIgdbResults(results);
-      setIgdbStatus("done");
-    } catch (err) {
-      setIgdbError(
-        err instanceof Error ? err.message : "Não foi possível buscar no catálogo global.",
-      );
-      setIgdbStatus("error");
-    }
-  }
-
-  async function handleImportarJogo(igdbId: number) {
-    setImportingId(igdbId);
-    try {
-      await importIgdbGame(igdbId);
-      toast.success("Jogo adicionado! Já aparece na busca.");
-      setIgdbResults((prev) => prev.filter((r) => r.igdb_id !== igdbId));
-      await queryClient.invalidateQueries({ queryKey: ["jogos"] });
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Falha ao importar esse jogo.");
-    } finally {
-      setImportingId(null);
-    }
   }
 
   const totalPages = data ? Math.max(1, Math.ceil(data.count / PAGE_SIZE)) : 1;
@@ -187,13 +143,7 @@ function Explorar() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-<<<<<<< HEAD
-            setIgdbStatus("idle");
-            setIgdbResults([]);
-            applyFilters({ q });
-=======
             applyFilters({ q: pendingQuery.trim() });
->>>>>>> main
           }}
           className="mb-4 flex gap-2"
         >
@@ -242,18 +192,7 @@ function Explorar() {
             ))}
           </div>
         ) : !data?.rows.length ? (
-<<<<<<< HEAD
-          <EmptyState
-            q={q}
-            status={igdbStatus}
-            error={igdbError}
-            results={igdbResults}
-            importingId={importingId}
-            onBuscarCatalogo={handleBuscarCatalogoGlobal}
-            onImportar={handleImportarJogo}
-          />
-=======
-          filters.q ? (
+          q ? (
             <div className="space-y-6">
               {loadingIgdb ? (
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
@@ -265,7 +204,7 @@ function Explorar() {
                 <>
                   <div className="rounded-xl border border-border bg-card p-4">
                     <p className="text-sm text-muted-foreground">
-                      Nenhum jogo local encontrado. Resultados automáticos da IGDB:
+                      Nenhum jogo local encontrado. Exibindo resultados automáticos da IGDB.
                     </p>
                   </div>
                   <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
@@ -281,7 +220,6 @@ function Explorar() {
           ) : (
             <EmptyState />
           )
->>>>>>> main
         ) : (
           <>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
@@ -314,18 +252,6 @@ function Explorar() {
                   Próxima
                 </button>
               </div>
-            )}
-
-            {q && (
-              <CatalogoGlobalSection
-                q={q}
-                status={igdbStatus}
-                error={igdbError}
-                results={igdbResults}
-                importingId={importingId}
-                onBuscarCatalogo={handleBuscarCatalogoGlobal}
-                onImportar={handleImportarJogo}
-              />
             )}
           </>
         )}
@@ -365,123 +291,10 @@ function Select({
   );
 }
 
-type IgdbStatus = "idle" | "loading" | "done" | "error";
-
-function EmptyState({
-  q,
-  status,
-  error,
-  results,
-  importingId,
-  onBuscarCatalogo,
-  onImportar,
-}: {
-  q: string;
-  status: IgdbStatus;
-  error: string | null;
-  results: IgdbResult[];
-  importingId: number | null;
-  onBuscarCatalogo: () => void;
-  onImportar: (igdbId: number) => void;
-}) {
+function EmptyState() {
   return (
     <div className="rounded-lg border border-dashed border-border bg-card/40 py-16 text-center">
       <p className="text-sm text-muted-foreground">Nenhum jogo encontrado com esses filtros.</p>
-      {q && (
-        <div className="mx-auto mt-6 max-w-md px-4 text-left">
-          <CatalogoGlobalSection
-            q={q}
-            status={status}
-            error={error}
-            results={results}
-            importingId={importingId}
-            onBuscarCatalogo={onBuscarCatalogo}
-            onImportar={onImportar}
-          />
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CatalogoGlobalSection({
-  q,
-  status,
-  error,
-  results,
-  importingId,
-  onBuscarCatalogo,
-  onImportar,
-}: {
-  q: string;
-  status: IgdbStatus;
-  error: string | null;
-  results: IgdbResult[];
-  importingId: number | null;
-  onBuscarCatalogo: () => void;
-  onImportar: (igdbId: number) => void;
-}) {
-  return (
-    <div className="mt-8 border-t border-border pt-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold">Não achou "{q}"?</h2>
-          <p className="text-xs text-muted-foreground">
-            Busque no catálogo global e adicione o jogo à plataforma.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={onBuscarCatalogo}
-          disabled={status === "loading"}
-          className="flex items-center gap-2 rounded-md border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent disabled:opacity-50"
-        >
-          {status === "loading" && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-          Buscar no catálogo global
-        </button>
-      </div>
-
-      {status === "error" && (
-        <p className="mt-4 text-xs text-destructive">{error}</p>
-      )}
-
-      {status === "done" && results.length === 0 && (
-        <p className="mt-4 text-xs text-muted-foreground">
-          Nenhum resultado encontrado no catálogo global para "{q}".
-        </p>
-      )}
-
-      {results.length > 0 && (
-        <ul className="mt-4 divide-y divide-border">
-          {results.map((r) => (
-            <li key={r.igdb_id} className="flex items-center gap-3 py-3">
-              <div className="h-16 w-11 shrink-0 overflow-hidden rounded bg-muted">
-                {r.capa && <img src={r.capa} alt="" className="h-full w-full object-cover" />}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{r.titulo}</p>
-                <p className="truncate text-xs text-muted-foreground">
-                  {r.desenvolvedora ?? "—"}
-                  {r.data_lancamento ? ` · ${r.data_lancamento.slice(0, 4)}` : ""}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => onImportar(r.igdb_id)}
-                disabled={importingId === r.igdb_id}
-                className="flex shrink-0 items-center gap-1.5 rounded-md bg-brand px-3 py-1.5 text-xs font-semibold hover:opacity-90 disabled:opacity-60"
-              >
-                {importingId === r.igdb_id ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Plus className="h-3.5 w-3.5" />
-                )}
-                Adicionar
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
     </div>
   );
 }
