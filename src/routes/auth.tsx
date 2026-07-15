@@ -59,18 +59,31 @@ function AuthPage() {
           toast.error(parsed.error.issues[0].message);
           return;
         }
-        const { error } = await supabase.auth.signUp({
+        const { data: signUpData, error } = await supabase.auth.signUp({
           email: parsed.data.email,
           password: parsed.data.senha,
           options: {
-            emailRedirectTo: `${window.location.origin}/auth`,
             data: { nome: parsed.data.nome, terms_accepted_at: new Date().toISOString() },
           },
         });
         if (error) throw error;
-        toast.success(
-          "Conta criada! Enviamos um email de confirmação. Verifique sua caixa de entrada para ativar o acesso.",
-        );
+
+        if (signUpData?.session) {
+          navigate({ to: "/perfil", replace: true });
+          return;
+        }
+
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: parsed.data.email,
+          password: parsed.data.senha,
+        });
+
+        if (!signInError) {
+          navigate({ to: "/perfil", replace: true });
+          return;
+        }
+
+        toast.success("Registro realizado com sucesso! Sua conta foi criada com êxito.");
         setMode("signin");
         setSenha("");
       } else {

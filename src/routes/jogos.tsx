@@ -1,18 +1,40 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { searchIgdb } from "@/lib/game-import";
 import { NavBar } from "@/components/nav-bar";
 import { GameCard, GameCardSkeleton, type GameCardData } from "@/components/game-card";
 import { Search } from "lucide-react";
 import { z } from "zod";
 
+const GENEROS = [
+  "RPG",
+  "Ação",
+  "Aventura",
+  "Indie",
+  "Plataforma",
+  "Metroidvania",
+  "Rogue-like",
+  "Simulação",
+] as const;
+const PLATAFORMAS = [
+  "PC",
+  "PlayStation 5",
+  "PlayStation 4",
+  "Xbox Series X",
+  "Xbox One",
+  "Nintendo Switch",
+  "Mobile",
+] as const;
+const ANOS = Array.from({ length: 15 }, (_, i) => String(new Date().getFullYear() - i)) as const;
+
 const searchSchema = z.object({
-  q: z.string().optional().catch(""),
-  genero: z.string().optional().catch(""),
-  plataforma: z.string().optional().catch(""),
-  ano: z.string().optional().catch(""),
-  page: z.coerce.number().int().min(1).optional().catch(1),
+  q: z.string().trim().max(100).optional().catch("").default(""),
+  genero: z.enum(GENEROS).optional().catch("").default(""),
+  plataforma: z.enum(PLATAFORMAS).optional().catch("").default(""),
+  ano: z.enum(ANOS).optional().catch("").default(""),
+  page: z.coerce.number().int().min(1).optional().catch(1).default(1),
 });
 
 export const Route = createFileRoute("/jogos")({
@@ -34,16 +56,30 @@ function Explorar() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: "/jogos" });
 
-  const [q, setQ] = useState(search.q ?? "");
+  const [pendingQuery, setPendingQuery] = useState(search.q ?? "");
   const genero = search.genero ?? "";
   const plataforma = search.plataforma ?? "";
   const ano = search.ano ?? "";
   const page = search.page ?? 1;
 
+  useEffect(() => {
+    setPendingQuery(search.q ?? "");
+  }, [search.q]);
+
   const filters = useMemo(
-    () => ({ q: search.q ?? "", genero, plataforma, ano, page }),
+    () => ({ q: search.q?.trim() ?? "", genero, plataforma, ano, page }),
     [search.q, genero, plataforma, ano, page],
   );
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const trimmed = pendingQuery.trim();
+      if (trimmed !== search.q) {
+        applyFilters({ q: trimmed });
+      }
+    }, 450);
+    return () => clearTimeout(timer);
+  }, [pendingQuery, search.q]);
 
   const { data, isLoading } = useQuery({
     queryKey: ["jogos", filters],
@@ -68,31 +104,28 @@ function Explorar() {
     },
   });
 
+  const { data: igdbResults, isFetching: loadingIgdb } = useQuery({
+    queryKey: ["igdb-search", filters.q],
+    queryFn: async () => {
+      const remoteResults = await searchIgdb(filters.q);
+      return remoteResults.map((game) => ({
+        id: `igdb-${game.igdb_id}`,
+        titulo: game.titulo,
+        capa: game.capa,
+        data_lancamento: game.data_lancamento,
+        generos: game.generos,
+        plataformas: game.plataformas,
+      })) as GameCardData[];
+    },
+    enabled: Boolean(filters.q && filters.q.length >= 3 && !isLoading && data?.rows.length === 0),
+    staleTime: 1000 * 60 * 2,
+  });
+
   function applyFilters(next: Partial<z.infer<typeof searchSchema>>) {
     navigate({ search: (prev: Record<string, unknown>) => ({ ...prev, ...next, page: 1 }) });
   }
 
   const totalPages = data ? Math.max(1, Math.ceil(data.count / PAGE_SIZE)) : 1;
-  const GENEROS = [
-    "RPG",
-    "Ação",
-    "Aventura",
-    "Indie",
-    "Plataforma",
-    "Metroidvania",
-    "Rogue-like",
-    "Simulação",
-  ];
-  const PLATAFORMAS = [
-    "PC",
-    "PlayStation 5",
-    "PlayStation 4",
-    "Xbox Series X",
-    "Xbox One",
-    "Nintendo Switch",
-    "Mobile",
-  ];
-  const ANOS = Array.from({ length: 15 }, (_, i) => new Date().getFullYear() - i);
 
   return (
     <div className="min-h-screen">
@@ -106,15 +139,15 @@ function Explorar() {
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            applyFilters({ q });
+            applyFilters({ q: pendingQuery.trim() });
           }}
           className="mb-4 flex gap-2"
         >
           <div className="relative flex-1">
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
             <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
+              value={pendingQuery}
+              onChange={(e) => setPendingQuery(e.target.value)}
               placeholder="Buscar por nome…"
               className="w-full rounded-md border border-border bg-input py-2 pl-9 pr-3 text-sm outline-none focus:ring-2 focus:ring-brand"
             />
@@ -155,7 +188,34 @@ function Explorar() {
             ))}
           </div>
         ) : !data?.rows.length ? (
-          <EmptyState />
+          filters.q ? (
+            <div className="space-y-6">
+              {loadingIgdb ? (
+                <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+                  {Array.from({ length: 6 }).map((_, i) => (
+                    <GameCardSkeleton key={i} />
+                  ))}
+                </div>
+              ) : igdbResults?.length ? (
+                <>
+                  <div className="rounded-xl border border-border bg-card p-4">
+                    <p className="text-sm text-muted-foreground">
+                      Nenhum jogo local encontrado. Resultados automáticos da IGDB:
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+                    {igdbResults.map((j) => (
+                      <GameCard key={j.id} jogo={j} />
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <EmptyState />
+              )}
+            </div>
+          ) : (
+            <EmptyState />
+          )
         ) : (
           <>
             <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
