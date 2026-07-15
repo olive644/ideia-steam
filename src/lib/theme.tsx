@@ -5,10 +5,10 @@ export type ThemeMode = "light" | "dark" | "system";
 export type AccentColor = "neutral" | "red" | "blue" | "green" | "yellow" | "purple" | "orange";
 
 export const ACCENT_OPTIONS: { value: AccentColor; label: string; swatch: string }[] = [
-  { value: "neutral", label: "Preto & Branco", swatch: "#F5F5F5" },
+  { value: "neutral", label: "Preto & Branco", swatch: "#E7E4D9" },
+  { value: "green", label: "Verde", swatch: "#00C853" },
   { value: "red", label: "Vermelho", swatch: "#E5484D" },
   { value: "blue", label: "Azul", swatch: "#3B82F6" },
-  { value: "green", label: "Verde", swatch: "#22C55E" },
   { value: "yellow", label: "Dourado", swatch: "#F5C518" },
   { value: "purple", label: "Roxo", swatch: "#8B5CF6" },
   { value: "orange", label: "Laranja", swatch: "#F97316" },
@@ -39,24 +39,24 @@ function applyTheme(mode: ThemeMode, accent: AccentColor) {
   root.classList.forEach((c) => {
     if (c.startsWith("accent-")) root.classList.remove(c);
   });
-  if (accent !== "neutral") root.classList.add(`accent-${accent}`);
+  root.classList.add(`accent-${accent}`);
 }
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [mode, setModeState] = useState<ThemeMode>("dark");
-  const [accent, setAccentState] = useState<AccentColor>("neutral");
+  const [accent, setAccentState] = useState<AccentColor>("green");
   const [hydrated, setHydrated] = useState(false);
 
   // Load from localStorage first, then from profile if logged in
   useEffect(() => {
     try {
       const m = (localStorage.getItem("ludi:mode") as ThemeMode) || "dark";
-      const a = (localStorage.getItem("ludi:accent") as AccentColor) || "neutral";
+      const a = (localStorage.getItem("ludi:accent") as AccentColor) || "green";
       setModeState(m);
       setAccentState(a);
       applyTheme(m, a);
     } catch {
-      applyTheme("dark", "neutral");
+      applyTheme("dark", "green");
     }
     setHydrated(true);
 

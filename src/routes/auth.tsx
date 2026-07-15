@@ -200,9 +200,9 @@ function AuthPage() {
               <button
                 type="button"
                 onClick={handleForgot}
-                className="text-xs text-muted-foreground hover:text-foreground"
+                className="text-sm font-medium text-brand underline underline-offset-4 hover:opacity-80"
               >
-                Esqueceu a senha?
+                Esqueci minha senha
               </button>
             )}
 
