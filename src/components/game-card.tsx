@@ -8,6 +8,7 @@ export type GameCardData = {
   capa: string | null;
   data_lancamento?: string | null;
   media?: number | null;
+  igdb_id?: number;
 };
 
 export function GameCard({ jogo }: { jogo: GameCardData }) {

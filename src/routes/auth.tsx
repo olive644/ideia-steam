@@ -33,11 +33,17 @@ function AuthPage() {
   const [senha, setSenha] = useState("");
   const [aceito, setAceito] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) navigate({ to: "/perfil", replace: true });
     });
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("confirmed") === "1") {
+      setMessage("Seu email foi confirmado. Faça login para continuar.");
+    }
   }, [navigate]);
 
   // Só libera o botão de Entrar/Criar conta quando os campos obrigatórios
@@ -69,10 +75,40 @@ function AuthPage() {
           toast.error(parsed.error.issues[0].message);
           return;
         }
+        // Pre-check: impede cadastro com email ou nome já existente
+        try {
+          const { data: emailRow } = await supabase
+            .from("profiles")
+            .select("id")
+            .eq("email", parsed.data.email)
+            .maybeSingle();
+          if (emailRow) {
+            toast.error("Já existe uma conta com esse email.");
+            setLoading(false);
+            return;
+          }
+        } catch (e) {
+          // ignore pre-check errors and continue to rely on auth error
+        }
+        try {
+          const { data: nameRow } = await supabase
+            .from("profiles")
+            .select("id")
+            .eq("nome", parsed.data.nome)
+            .maybeSingle();
+          if (nameRow) {
+            toast.error("Esse nome já está em uso. Escolha outro.");
+            setLoading(false);
+            return;
+          }
+        } catch (e) {
+          // ignore
+        }
         const { data: signUpData, error } = await supabase.auth.signUp({
           email: parsed.data.email,
           password: parsed.data.senha,
           options: {
+            // do not require email redirect/confirmation from client side
             data: { nome: parsed.data.nome, terms_accepted_at: new Date().toISOString() },
           },
         });
@@ -83,17 +119,22 @@ function AuthPage() {
           return;
         }
 
-        const { error: signInError } = await supabase.auth.signInWithPassword({
-          email: parsed.data.email,
-          password: parsed.data.senha,
-        });
-
-        if (!signInError) {
-          navigate({ to: "/perfil", replace: true });
-          return;
+        // Após cadastro, tentar autenticar automaticamente (se o Supabase permitir)
+        try {
+          const { error: signInError } = await supabase.auth.signInWithPassword({
+            email: parsed.data.email,
+            password: parsed.data.senha,
+          });
+          if (!signInError) {
+            navigate({ to: "/perfil", replace: true });
+            return;
+          }
+        } catch (e) {
+          // continue to fallback message
         }
 
-        toast.success("Registro realizado com sucesso! Sua conta foi criada com êxito.");
+        setMessage("Registro realizado! Caso o login automático falhe, entre manualmente.");
+        toast.success("Registro realizado!");
         setMode("signin");
         setSenha("");
       } else {
@@ -110,7 +151,12 @@ function AuthPage() {
         navigate({ to: "/perfil", replace: true });
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Erro ao autenticar");
+      const message = err instanceof Error ? err.message : "Erro ao autenticar";
+      if (message.toLowerCase().includes("confirm")) {
+        toast.error("Email não confirmado. Verifique sua caixa de entrada ou spam.");
+      } else {
+        toast.error(message);
+      }
     } finally {
       setLoading(false);
     }
@@ -165,6 +211,11 @@ function AuthPage() {
         </Link>
 
         <div className="rounded-xl border border-border bg-card p-8">
+          {message ? (
+            <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+              {message}
+            </div>
+          ) : null}
           <div className="mb-6 flex rounded-lg bg-muted p-1 text-sm">
             <button
               onClick={() => setMode("signin")}

@@ -1,11 +1,12 @@
 ﻿import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { searchIgdb, type IgdbResult } from "@/lib/game-import";
+import { importIgdbGame, searchIgdb, type IgdbResult } from "@/lib/game-import";
 import { NavBar } from "@/components/nav-bar";
 import { GameCard, GameCardSkeleton, type GameCardData } from "@/components/game-card";
 import { Search } from "lucide-react";
+import { toast } from "sonner";
 import { z } from "zod";
 
 const GENEROS = [
@@ -58,6 +59,7 @@ const PAGE_SIZE = 24;
 function Explorar() {
   const search = Route.useSearch();
   const navigate = useNavigate({ from: "/jogos" });
+  const qc = useQueryClient();
 
   const [pendingQuery, setPendingQuery] = useState(search.q ?? "");
   const q = search.q?.trim() ?? "";
@@ -114,6 +116,7 @@ function Explorar() {
       const remoteResults = await searchIgdb(q);
       return remoteResults.map((game) => ({
         id: `igdb-${game.igdb_id}`,
+        igdb_id: game.igdb_id,
         titulo: game.titulo,
         capa: game.capa,
         data_lancamento: game.data_lancamento,
@@ -124,6 +127,52 @@ function Explorar() {
     enabled: Boolean(q && q.length >= 3 && !isLoading && data?.rows.length === 0),
     staleTime: 1000 * 60 * 2,
   });
+
+  const importMutation = useMutation({
+    mutationFn: async (igdbId: number) => await importIgdbGame(igdbId),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["jogos", filters] });
+      qc.invalidateQueries({ queryKey: ["igdb-search", q] });
+      toast.success(
+        res.jaExistia
+          ? "Jogo já existia no catálogo local."
+          : "Jogo importado com sucesso! Ele já pode ser encontrado na lista local.",
+      );
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : "Falha ao importar jogo."),
+  });
+
+  const [autoImported, setAutoImported] = useState(false);
+
+  useEffect(() => {
+    if (autoImported) return;
+    if (!igdbResults || !igdbResults.length) return;
+    if (data?.rows?.length) return;
+
+    (async () => {
+      try {
+        const { data: userData } = await supabase.auth.getUser();
+        if (!userData.user) return; // só importa automaticamente para usuários logados
+
+        let imported = 0;
+        for (const j of igdbResults) {
+          const igdbId = (j as any).igdb_id as number | undefined;
+          if (!igdbId) continue;
+          try {
+            const res = await importMutation.mutateAsync(igdbId);
+            if (!res.jaExistia) imported++;
+          } catch (e) {
+            // ignore individual failures
+          }
+        }
+        if (imported) toast.success(`${imported} jogos importados automaticamente.`);
+      } catch (e) {
+        // ignore
+      } finally {
+        setAutoImported(true);
+      }
+    })();
+  }, [igdbResults, data?.rows, autoImported, importMutation]);
 
   function applyFilters(next: Partial<z.infer<typeof searchSchema>>) {
     navigate({ search: (prev: Record<string, unknown>) => ({ ...prev, ...next, page: 1 }) });
@@ -205,11 +254,25 @@ function Explorar() {
                   <div className="rounded-xl border border-border bg-card p-4">
                     <p className="text-sm text-muted-foreground">
                       Nenhum jogo local encontrado. Exibindo resultados automáticos da IGDB.
+                      Você pode importar qualquer jogo para o catálogo local.
                     </p>
                   </div>
-                  <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
                     {igdbResults.map((j) => (
-                      <GameCard key={j.id} jogo={j} />
+                      <div key={j.id} className="space-y-2">
+                        <GameCard jogo={j} />
+                        {typeof j.igdb_id === "number" ? (
+                          <button
+                            disabled={importMutation.isLoading && importMutation.variables === j.igdb_id}
+                            onClick={() => importMutation.mutate(j.igdb_id!)}
+                            className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm font-medium transition hover:bg-accent disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {importMutation.isLoading && importMutation.variables === j.igdb_id
+                              ? "Importando..."
+                              : "Importar para catálogo"}
+                          </button>
+                        ) : null}
+                      </div>
                     ))}
                   </div>
                 </>
