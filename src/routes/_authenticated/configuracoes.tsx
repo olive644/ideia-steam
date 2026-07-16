@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { NavBar } from "@/components/nav-bar";
 import { toast } from "sonner";
-import { Loader2, Check, Gamepad2, Info } from "lucide-react";
+import { Loader2, Check, Gamepad2, Info, AlertCircle, Mail } from "lucide-react";
 import { z } from "zod";
 import { useTheme, ACCENT_OPTIONS, type ThemeMode } from "@/lib/theme";
 import { resolveSteamProfile, importSteamLibrary } from "@/lib/game-import";
@@ -37,12 +37,15 @@ function Configuracoes() {
   const [loadingProfile, setLoadingProfile] = useState(false);
   const [loadingSenha, setLoadingSenha] = useState(false);
   const [ready, setReady] = useState(false);
+  const [emailConfirmed, setEmailConfirmed] = useState(false);
+  const [resendingEmail, setResendingEmail] = useState(false);
 
   useEffect(() => {
     (async () => {
       const { data: userData } = await supabase.auth.getUser();
       if (!userData.user) return;
       setUserId(userData.user.id);
+      setEmailConfirmed(!!userData.user.email_confirmed_at);
       const { data } = await supabase
         .from("profiles")
         .select("nome, foto, bio")
@@ -88,6 +91,13 @@ function Configuracoes() {
       toast.error("Mínimo 6 caracteres");
       return;
     }
+
+    // Verificar se o email foi confirmado antes de permitir troca de senha
+    if (!emailConfirmed) {
+      toast.error("Você precisa confirmar seu email antes de trocar a senha. Verifique sua caixa de entrada.");
+      return;
+    }
+
     setLoadingSenha(true);
     const { error } = await supabase.auth.updateUser({ password: novaSenha });
     setLoadingSenha(false);
@@ -96,6 +106,17 @@ function Configuracoes() {
       toast.success("Senha atualizada!");
       setNovaSenha("");
     }
+  }
+
+  async function handleResendConfirmation() {
+    setResendingEmail(true);
+    const { error } = await supabase.auth.resend({
+      type: "signup",
+      email: (await supabase.auth.getUser()).data.user?.email ?? "",
+    });
+    setResendingEmail(false);
+    if (error) toast.error(error.message);
+    else toast.success("Email de confirmação reenviado!");
   }
 
   return (
@@ -109,6 +130,37 @@ function Configuracoes() {
           <div className="mt-8 animate-pulse text-muted-foreground">Carregando…</div>
         ) : (
           <>
+            {/* Status de confirmação de email */}
+            <div className={`mt-6 rounded-xl border p-4 ${emailConfirmed ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+              <div className="flex items-start gap-3">
+                {emailConfirmed ? (
+                  <Check className="mt-0.5 h-5 w-5 text-emerald-600" />
+                ) : (
+                  <AlertCircle className="mt-0.5 h-5 w-5 text-amber-600" />
+                )}
+                <div className="flex-1">
+                  <p className={`text-sm font-medium ${emailConfirmed ? "text-emerald-800" : "text-amber-800"}`}>
+                    {emailConfirmed ? "Email confirmado" : "Email não confirmado"}
+                  </p>
+                  <p className={`mt-1 text-xs ${emailConfirmed ? "text-emerald-700" : "text-amber-700"}`}>
+                    {emailConfirmed
+                      ? "Sua conta está verificada. Você pode realizar todas as ações disponíveis."
+                      : "Você precisa confirmar seu email para trocar senha ou realizar outras ações sensíveis."}
+                  </p>
+                  {!emailConfirmed && (
+                    <button
+                      onClick={handleResendConfirmation}
+                      disabled={resendingEmail}
+                      className="mt-2 flex items-center gap-1.5 text-xs font-medium text-amber-800 underline hover:text-amber-900 disabled:opacity-50"
+                    >
+                      {resendingEmail && <Loader2 className="h-3 w-3 animate-spin" />}
+                      Reenviar email de confirmação
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+
             <ThemeSection />
             <form
               onSubmit={handleSaveProfile}

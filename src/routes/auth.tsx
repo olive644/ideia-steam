@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { Gamepad2, Loader2 } from "lucide-react";
@@ -34,12 +34,48 @@ function AuthPage() {
   const [aceito, setAceito] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const turnstileRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => {
       if (data.user) navigate({ to: "/perfil", replace: true });
     });
   }, [navigate]);
+
+  // Carregar script do Turnstile quando o modo for signup
+  useEffect(() => {
+    if (mode !== "signup") return;
+
+    const script = document.createElement("script");
+    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+    script.async = true;
+    script.defer = true;
+    document.head.appendChild(script);
+
+    // Inicializar Turnstile quando o script carregar
+    const initTurnstile = () => {
+      if (!turnstileRef.current) return;
+      const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY || "0x4AAAAAAAxxxxxxxxxxxxxx"; // Fallback para desenvolvimento
+      if (typeof window !== "undefined" && (window as any).turnstile) {
+        (window as any).turnstile.render(turnstileRef.current, {
+          sitekey: siteKey,
+          callback: (token: string) => setTurnstileToken(token),
+          "error-callback": () => setTurnstileToken(null),
+          "expired-callback": () => setTurnstileToken(null),
+        });
+      }
+    };
+
+    script.onload = initTurnstile;
+
+    return () => {
+      document.head.removeChild(script);
+      if (turnstileRef.current && typeof window !== "undefined" && (window as any).turnstile) {
+        (window as any).turnstile.remove(turnstileRef.current);
+      }
+    };
+  }, [mode]);
 
   // Só libera o botão de Entrar/Criar conta quando os campos obrigatórios
   // dessa etapa estiverem preenchidos corretamente (reaproveita os mesmos
@@ -49,7 +85,7 @@ function AuthPage() {
     mode === "signup"
       ? signUpSchema.safeParse({ nome, email, senha }).success
       : signInSchema.safeParse({ email, senha }).success;
-  const podeEnviar = formValido && aceito;
+  const podeEnviar = formValido && aceito && (mode === "signin" || turnstileToken);
 
   function ensureTerms(): boolean {
     if (!aceito) {
@@ -62,6 +98,10 @@ function AuthPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!ensureTerms()) return;
+    if (mode === "signup" && !turnstileToken) {
+      toast.error("Complete a verificação de segurança.");
+      return;
+    }
     setLoading(true);
     try {
       if (mode === "signup") {
@@ -70,21 +110,8 @@ function AuthPage() {
           toast.error(parsed.error.issues[0].message);
           return;
         }
-        // Pre-check: impede cadastro com email ou nome já existente
-        try {
-          const { data: emailRow } = await supabase
-            .from("profiles")
-            .select("id")
-            .eq("email", parsed.data.email)
-            .maybeSingle();
-          if (emailRow) {
-            toast.error("Já existe uma conta com esse email.");
-            setLoading(false);
-            return;
-          }
-        } catch (e) {
-          // ignore pre-check errors and continue to rely on auth error
-        }
+        // Pre-check: impede cadastro com nome já existente
+        // (email uniqueness é garantido nativamente pelo Supabase em auth.users)
         try {
           const { data: nameRow } = await supabase
             .from("profiles")
@@ -99,6 +126,28 @@ function AuthPage() {
         } catch (e) {
           // ignore
         }
+
+        // Validar token do Turnstile e verificar rate limiting
+        try {
+          const { data: protectData, error: protectError } = await supabase.functions.invoke(
+            "signup-protect",
+            {
+              method: "POST",
+              body: { token: turnstileToken, email: parsed.data.email },
+            },
+          );
+          if (protectError || !protectData?.success) {
+            toast.error(protectError?.message || protectData?.error || "Verificação de segurança falhou.");
+            setLoading(false);
+            return;
+          }
+        } catch (e) {
+          console.error("Erro na validação de segurança:", e);
+          toast.error("Erro na validação de segurança. Tente novamente.");
+          setLoading(false);
+          return;
+        }
+
         const { data: signUpData, error } = await supabase.auth.signUp({
           email: parsed.data.email,
           password: parsed.data.senha,
@@ -106,7 +155,15 @@ function AuthPage() {
             data: { nome: parsed.data.nome, terms_accepted_at: new Date().toISOString() },
           },
         });
-        if (error) throw error;
+        if (error) {
+          // Tratamento amigável para erro de email já cadastrado
+          if (error.message.includes("already been registered") || error.message.includes("already registered")) {
+            toast.error("Já existe uma conta com esse email.");
+          } else {
+            throw error;
+          }
+          return;
+        }
 
         if (signUpData?.session) {
           navigate({ to: "/perfil", replace: true });
@@ -259,6 +316,15 @@ function AuthPage() {
                 placeholder="••••••••"
               />
             </Field>
+
+            {mode === "signup" && (
+              <div>
+                <label className="mb-1 block text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                  Verificação de segurança
+                </label>
+                <div ref={turnstileRef} className="turnstile-container" />
+              </div>
+            )}
 
             {mode === "signin" && (
               <button
